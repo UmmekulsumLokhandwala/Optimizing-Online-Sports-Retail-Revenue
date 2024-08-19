@@ -1,0 +1,88 @@
+-- Counting Missing Values
+SELECT count(*) as total_rows,
+    count(I.description) as count_description,
+    count(F.listing_price) as count_listing_price,
+    count(T.last_visited) as count_last_visited
+FROM info_v2 I 
+JOIN finance F
+ON I.product_id = F.product_id 
+JOIN traffic_v3 T
+ON I.product_id = T.product_id;
+
+-- 2. Nike vs Adidas pricing
+SELECT B.brand, 
+       CAST(listing_price AS Integer) as listing_price, 
+       COUNT (*) AS Count 
+FROM finance  F
+JOIN brands_v2 B
+ON B.product_id = F.product_id
+WHERE F.listing_price > 0
+GROUP BY B.brand, listing_price
+ORDER BY listing_price DESC;
+
+-- 3. Labeling price ranges
+SELECT COUNT(*) AS COUNT, B.brand, SUM(F.revenue) AS Total_Revenue, 
+CASE WHEN F.listing_price < 42 THEN 'Budget'
+WHEN F.listing_price >= 42 AND F.listing_price < 74 THEN 'Average'
+WHEN F.listing_price >= 74 AND F.listing_price < 129 THEN 'Expensive'
+ELSE 'Elite' END AS price_category
+FROM finance F
+JOIN brands_v2 B ON F.product_id = B.product_id
+WHERE B.brand IS NOT NULL 
+GROUP BY B.brand, 
+CASE WHEN F.listing_price < 42 THEN 'Budget'
+WHEN F.listing_price >= 42 AND F.listing_price < 74 THEN 'Average'
+WHEN F.listing_price >= 74 AND F.listing_price < 129 THEN 'Expensive'
+ELSE 'Elite' END 
+ORDER BY Total_Revenue DESC;
+
+-- 4. Average discount by brand
+SELECT B.brand, AVG(discount) * 100 AS Average_Discount
+FROM finance F 
+JOIN brands_v2 B
+ON F.product_id = B.product_id
+WHERE B.brand IS NOT NULL
+GROUP BY B.brand;
+
+-- 5. Correlation between revenue and reviews
+WITH stats AS (
+    SELECT 
+        F.revenue,
+        R.reviews,
+        AVG(F.revenue) OVER () AS avg_revenue,
+        AVG(R.reviews) OVER () AS avg_reviews
+    FROM finance F
+    JOIN reviews_v2 R
+    ON F.product_id = R.product_id
+),
+correlation AS (
+    SELECT 
+        SUM((revenue - avg_revenue) * (reviews - avg_reviews)) AS numerator,
+        SQRT(SUM(POWER(revenue - avg_revenue, 2))) AS denominator_revenue,
+        SQRT(SUM(POWER(reviews - avg_reviews, 2))) AS denominator_reviews
+    FROM stats
+)
+SELECT 
+    numerator / (denominator_revenue * denominator_reviews) AS review_revenue_corr
+FROM correlation;
+
+-- 6. Ratings and reviews by product description length
+SELECT FLOOR(LEN(description)/100.0) * 100 AS description_length,
+       ROUND(AVG(CAST(rating AS numeric)), 2) AS average_rating
+FROM info_v2 I
+JOIN reviews_v2 R ON I.product_id = R.product_id
+WHERE description IS NOT NULL
+GROUP BY FLOOR(LEN(description)/100.0) * 100
+ORDER BY description_length;
+
+-- 7. Reviews by month and brand
+SELECT B.brand, 
+       MONTH(T.last_visited) AS month,
+       COUNT(*) AS num_reviews
+FROM brands_v2 B
+JOIN traffic_v3 T ON B.product_id = T.product_id
+JOIN reviews_v2 R ON R.product_id = T.product_id
+WHERE B.brand IS NOT NULL
+GROUP BY B.brand, MONTH(T.last_visited)
+HAVING MONTH(T.last_visited) IS NOT NULL
+ORDER BY B.brand, month;
